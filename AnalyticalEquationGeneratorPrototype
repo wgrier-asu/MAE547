@@ -1,0 +1,214 @@
+%Prototype code for generating analytical equations of motion for a general robot arm
+
+%TODO: P_L needs to be generalized in order for this code to work...
+%everything else should be in working order, although some testing to
+%validate that claim would be nice
+
+
+clear
+
+%number of joints
+    numJoints = 3;
+
+%lets generate some symbolic symbols some parameters
+    syms a1 a2 a3 l_1 l_2 l_3 g t
+    
+    q =sym('q', [numJoints,1]);
+    ddq =sym('ddq', [numJoints,1]);
+    dq =sym('dq', [numJoints,1]);
+    I_Lzz_i =sym("I_Lzz_i", [numJoints,1]);
+    I_mzz_i =sym("I_mzz_i", [numJoints,1]);
+    Kr =sym("Kr", [numJoints,1]);
+    mm =sym("mm", [numJoints,1]);
+    ml =sym("ml", [numJoints,1]);
+    Fv_diags =sym("Fv", [numJoints,1]);
+    Fv = diag(Fv_diags);
+    Fs_diags =sym("Fs", [numJoints,1]);
+    Fs= diag(Fs_diags);
+    tau =sym("tau", [numJoints,1]);
+    h_e =sym("h_e", [6,1]);
+
+%defining some user inputs
+    JointTypes = [0 0 0]; % 0 == revolute, 1== prismatic
+    g_o = [0; -g; 0];%gravity vector
+
+    %dh Params for robot
+    a = [a1 a2 a3].';  
+    alpha = [0 0 0].';
+    d=[0 0 0].';
+    theta = q; 
+
+
+%declaring some vectors. Each column if for a different i indice
+%i starts at 0
+    T_o_i = eye(4);
+    z = cell(1,numJoints+1);
+    P_i = cell(1,numJoints+1);
+    z{1}= T_o_i(1:3,3);
+    P_i{1}= T_o_i(1:3,4);
+    
+    R_Li = cell(1,numJoints+1);
+    R_mi = cell(1,numJoints+1);
+
+%find the P_i, R_mi, R_Li and z vector for each joint using the homogeneous
+%transformation matrix
+    for i = 1:numJoints
+        T{i} = [cos(theta(i)) -sin(theta(i))*cos(alpha(i)) sin(theta(i))*sin(alpha(i)) a(i)*cos(theta(i));
+            sin(theta(i)) cos(theta(i))*cos(alpha(i)) -cos(theta(i))*sin(alpha(i)) a(i)*sin(theta(i));
+            0 sin(alpha(i)) cos(alpha(i)) d(i);
+            0 0 0 1];
+    
+        R_mi{i} =T_o_i(1:3,1:3); %assuming motor is at joint i-1
+    
+        T_o_i = T_o_i * T{i};
+        T_o_i = simplify(T_o_i);
+    
+        z{i+1} = T_o_i(1:3,3);
+        P_i{i+1}= T_o_i(1:3,4);
+    
+        R_Li{i} =T_o_i(1:3,1:3);
+    
+    end
+
+%convert cells to symbolic matricies
+    z = cell2sym(z);
+    P_i = cell2sym(P_i);
+
+%Calcuate P_L for i = 0 to numJoints -->TODO: THIS NEEDS TO BE GENERALIZED...
+P_L = [0, 0, 0;
+       l_1*cos(q(1)), l_1*sin(q(1)) 0;
+       a1*cos(q(1))+l_2*cos(q(1)+q(2)), a1*sin(q(1))+l_2*sin(q(1)+q(2)) 0;
+       a1*cos(q(1))+a2*cos(q(1)+q(2))+l_3*cos(q(1)+q(2)+q(3)), a1*sin(q(1))+a2*sin(q(1)+q(2))+l_3*sin(q(1)+q(2)+q(3)) 0];
+
+%calulate the link jacobians
+    for i = 1:numJoints
+        for j = 1:numJoints
+            
+            if(JointTypes(i) ==0)  
+                %Revolute Case:
+                if(j<i)
+                    jp_L{j} = cross(z(:,j), (P_L(i+1,:).' - P_i(:,j)) );
+                    jo_L{j} = z(:,j);
+                    jp_m{j} = cross(z(:,j), (P_L(i,:).' - P_i(:,j)) );
+                    jo_m{j} = jo_L{j} ;
+                elseif(j==i)
+                    jp_L{j} = cross(z(:,j), (P_L(i+1,:).' - P_i(:,j)) );
+                    jo_L{j} = z(:,j);
+                    jo_m{j} =Kr(i)*jo_L{j} ;
+                    jp_m{j} = [0;0;0];
+                else
+                    jp_L{j} = [0;0;0];
+                    jo_L{j} = [0;0;0];
+                    jp_m{j} = [0;0;0];
+                    jo_m{j} = [0;0;0];
+                end
+    
+            else %prismatic case
+                if(j<i)
+                    jp_L{j} = z(:,j);
+                    jo_L{j} = [0;0;0];
+                    jp_m{j} = z(:,j);
+                    jo_m{j} = jo_L{j} ;
+                elseif(j==i)
+                    jp_L{j} = z(:,j);
+                    jo_L{j} = [0;0;0];
+                    jo_m{j} =Kr(i)*jo_L{j} ;
+                    jp_m{j} = [0;0;0];
+                else
+                    jp_L{j} = [0;0;0];
+                    jo_L{j} = [0;0;0];
+                    jp_m{j} = [0;0;0];
+                    jo_m{j} = [0;0;0];
+                end
+                
+            end
+            
+        end
+        %store jacobians as cells
+        Jp_Li{i} = [jp_L{:}];
+        Jo_Li{i} = [jo_L{:}];
+        Jp_mi{i} = [jp_m{:}];
+        Jo_mi{i} = [jo_m{:}];
+    end
+
+%some code in case we need to visualized the jacobians
+    % Jp_Li_v = cell2sym(Jp_Li);
+    % Jo_Li_v = cell2sym(Jo_Li)
+    % Jp_mi_v = cell2sym(Jp_mi)
+    % Jo_mi_v = cell2sym(Jo_mi)
+
+
+%calculate Arm Jacobian which takes us to the end effector
+    for i = 1:numJoints
+        if(JointTypes(i) ==0)  
+            %Revolute Case:
+            J_i{i} = [cross(z(:,i), (T_o_i(1:3,4) - P_i(:,i)));z(:,i)];
+          
+        else
+            %prismatic case
+            J_i{i} = [z(:,i); 0;0;0];
+        end
+    end
+
+%combine all jacobian colunmns
+    J = [J_i{:}]
+
+%calculate B
+    B = zeros(numJoints);
+    for i = 1:numJoints
+        
+        R_Li_i =cell2sym(R_Li(i));
+        R_mi_i =cell2sym(R_mi(i));
+    
+        Jp_li_i = cell2sym(Jp_Li(i));
+        Jo_li_i = cell2sym(Jo_Li(i));
+        Jp_mi_i = cell2sym(Jp_mi(i));
+        Jo_mi_i = cell2sym(Jo_mi(i));
+    
+        B= B + ml(i)*(Jp_li_i.')*Jp_li_i +Jo_li_i.'* R_Li_i*I_Lzz_i(i)*(R_Li_i.')*Jo_li_i + mm(i)*(Jp_mi_i.')*Jp_mi_i + Jo_mi_i.'*R_mi_i*I_mzz_i(i)* (R_mi_i.')*Jo_mi_i;
+    end
+    
+    B = simplify(B)
+    %matlabFunction(Beq,"File","Bfunction") %create function with B
+
+%calculate C_ijk
+    for i = 1:numJoints
+        for j = 1:numJoints
+            for k = 1:numJoints
+                C_ijk(i,j,k) = (1/2)*(diff(B(i,j),q(k)) + diff(B(i,k),q(j)) + diff(B(j,k),q(i)));
+                C_ijk(i,j,k)=simplify((C_ijk(i,j,k)));
+            end
+        end
+    end
+
+%calculate C_ij
+    C = repmat({0},numJoints,numJoints);
+    for i = 1:numJoints
+        for j = 1:numJoints
+            for k = 1:numJoints
+                C(i,j) = sym2cell(cell2sym(C(i,j)) + C_ijk(i,j,k)*dq(k));
+            end
+        end
+    end
+    
+    C=simplify(cell2sym(C))
+    C_ijk=simplify((C_ijk));
+
+
+%calculate g_i
+    g_i=repmat({0}, numJoints,1);
+    for i =1:numJoints
+        for j=1:numJoints
+            Jp_li_j = cell2sym(Jp_Li(i));
+            Jp_mi_j = cell2sym(Jp_mi(i));
+           
+            g_i{i} =  g_i{i} - (ml(j)*g_o.'*Jp_li_j(:,j) + mm(j)*g_o.'*Jp_mi_j(:,j)) ;
+        end
+    end
+    
+    g_i = simplify(cell2sym(g_i))
+
+%build the full dynamics questions
+    FullEquation = tau - (J.')*h_e == B*ddq+C*dq+Fv*dq+Fs*sign(dq)+g_i;
+    
+    FullEquation=simplify(FullEquation)
