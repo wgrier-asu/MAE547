@@ -6,7 +6,7 @@ if exist(rvcpath,'dir')
     startup_rvc
 end
 
-% BEGIN ROBOT SPECIFICATION %
+%% BEGIN ROBOT SPECIFICATION %
 % DH Parameter Inputs
 a = [4 3 2 2];
 d = [0 0 0 0];
@@ -55,7 +55,8 @@ robot.teach()
 P = [-9; 0; 0]; % Desired Position w.r.t. Base Frame
 R = [0 1 0; -1 0 0; 0 0 1]; % Desired Rotation w.r.t. Base Frame
 
-
+%%
+rtbdemo()
 
 
 %%
