@@ -11,9 +11,9 @@ end
 % he : end-effector generalized forces
 % q : joint positions
 % qd : joint velocities
-function [u] = invdyn(R, y, q, qd, he)
+function [u] = invdyn(R, y, q, qd, he, g)
     qdd = y;
-    grav = (0 0 -9.8)';
+    grav = g;
     fext = he;
     u = R.rne(q, qd, qdd, grav, fext); % compute inverse dynamics
 end
